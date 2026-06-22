@@ -19,6 +19,15 @@
 #   1) MOE_A16=1 (B12X_MOE_FORCE_A16) for long-ctx correctness (w4a4 accumulates error)
 #   2) HF_OVERRIDES.index_topk_pattern: DSA sparse-indexer pattern (derived from config.json)
 #   3) NCCL: unset NCCL_GRAPH_FILE inside the container
+#   4) -cc.cudagraph_mode=PIECEWISE (NOT JSON form): required for long-context decode.
+#      Under FULL cudagraph capture, the CuTe-DSL JIT machinery's cooperative-grid
+#      spin-barrier deadlocks because it's invoked from a captured stream — the
+#      _dcp_pack_topk_candidates_kernel JIT-compiles at inference time on the first
+#      long-prompt decode and hangs (sample_tokens RPC times out). PIECEWISE breaks
+#      the graph at vllm::sparse_attn_indexer (already in splitting_ops) so the
+#      indexer runs eagerly between captured pieces. The JSON form
+#      `--compilation-config '{"cudagraph_mode":"PIECEWISE"}'` silently drops to
+#      None — the CLI shortcut `-cc.cudagraph_mode=PIECEWISE` is the only working form.
 # =============================================================================
 set -euo pipefail
 
@@ -136,7 +145,8 @@ docker run -d --name "$NAME" \
       --gpu-memory-utilization '$GPU_UTIL' --max-model-len '$MAXLEN' --max-num-seqs '$MAX_SEQS' \
       --enable-chunked-prefill --max-num-batched-tokens '$MAX_BATCHED' \
       --max-cudagraph-capture-size '$GRAPH_CAP' --attention-backend '$ATTN_BACKEND' \
-      --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}' \
+      -cc.cudagraph_mode=PIECEWISE \
+      --compilation-config '{\"custom_ops\":[\"all\"]}' \
       --enable-flashinfer-autotune \
       \"\${HF_ARGS[@]}\" \"\${PARSER_ARGS[@]}\" \"\${SPEC_ARGS[@]}\"
   "

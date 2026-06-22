@@ -73,6 +73,7 @@ Measured on **4× RTX PRO 6000 96GB (sm120, PCIe Gen5, no NVLink)**, TP4. This i
 | `VLLM_DCP_GLOBAL_TOPK=1` | required | DCP>1 without it corrupts attention (and the DSA decode path requires the schedule metadata) |
 | `VLLM_DCP_SHARD_DRAFT=1` | recommended | shards MTP/draft KV across DCP ranks |
 | DSA `index_topk_pattern` | `FFFSSSF…SSS` | derived from `config.json` (line 54 of the launcher) |
+| `-cc.cudagraph_mode=PIECEWISE` | **required for long context** | Under `FULL_AND_PIECEWISE` (the default), the CuTe-DSL JIT for `_dcp_pack_topk_candidates_kernel` deadlocks at first decode after a long prefill (>100K tokens) — `sample_tokens` RPC times out. PIECEWISE breaks the graph at `vllm::sparse_attn_indexer` (already in `splitting_ops`) so the indexer runs eagerly between captured pieces. **JSON form `--compilation-config '{"cudagraph_mode":"PIECEWISE"}'` silently drops to None — must use the CLI shortcut.** |
 
 ---
 
